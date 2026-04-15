@@ -12,6 +12,7 @@ import requests
 from io import BytesIO
 from pexels_api import API
 from datetime import datetime
+import re
 
 load_dotenv(override=True)
 
@@ -118,15 +119,13 @@ def get_real_kid_image(topic):
 
     try:
         pexels = API(PEXELS_KEY)
-        
-        # Much better queries for educational/science topics
         base_queries = [
             f"{topic} diagram for kids",
             f"{topic} illustration simple",
             f"{topic} educational diagram",
             f"{topic} cycle explanation",
             f"{topic} process step by step",
-            f"{topic} water cycle" if "water" in topic.lower() or "cycle" in topic.lower() else f"{topic} learning"
+            f"{topic} learning illustration"
         ]
 
         bad_keywords = ["paramecium", "cilia", "vacuole", "nucleus", "amoeba", "bacteria", "cell", "microscope"]
@@ -136,7 +135,6 @@ def get_real_kid_image(topic):
             if results and results.get('photos'):
                 for photo in results['photos']:
                     alt_text = photo.get('alt', '').lower()
-                    # Skip clearly unrelated biology images
                     if any(bad in alt_text for bad in bad_keywords):
                         continue
                     
@@ -152,7 +150,6 @@ def get_real_kid_image(topic):
     except Exception as e:
         st.warning(f"Image search issue: {str(e)[:100]}")
 
-    # Final fallback
     return create_simple_fallback(topic), f"Simple illustration: {topic}"
 
 def create_simple_fallback(topic):
@@ -189,7 +186,6 @@ def transcribe_mic(audio_value):
         return ""
 
 def clean_for_voice(text):
-    import re
     return re.sub(r'[^\w\s.,!?]', '', text).strip()
 
 # ===================== CORE RESPONSE =====================
@@ -237,18 +233,21 @@ Make the child feel smart and happy. End with one easy question."""
         except:
             pass
 
+    # Improved Quiz Prompt
     quiz_topic = file_content[:500] if file_content else user_topic
     quiz_prompt = f"""Create exactly 5 fun multiple-choice quiz questions about '{quiz_topic}' for a 10-year-old in {language}.
+Each question should have 4 options.
 Randomly choose which option is correct.
-Do NOT mention the correct answer.
-Format each exactly like this:
+Do NOT mention the correct answer in the output.
+Format each question exactly like this:
+
 Q1: Question text here?
 1) option one
 2) option two
 3) option three
 4) option four
 
-Do the same for Q2 to Q5."""
+Do the same for Q2, Q3, Q4, Q5."""
 
     quiz_out = safe_generate_content(quiz_prompt)
 
@@ -378,6 +377,7 @@ else:
                 st.session_state.current_q = 0
                 st.session_state.quiz_started = False
                 st.session_state.user_answers = {}
+                st.session_state.quiz_questions = []   # New: Store parsed questions
 
                 # Save history
                 if file_content and file_content.strip():
@@ -409,45 +409,78 @@ else:
             st.audio(st.session_state.last_audio)
 
         st.subheader("❓ Smart Quiz")
+
         if st.button("Start Quiz 🎯", type="primary"):
+            # Parse questions properly
+            raw_text = st.session_state.quiz_out
+            # Split by Q1, Q2 etc. more reliably
+            questions = re.split(r'(Q\d+:)', raw_text)
+            parsed_questions = []
+            for i in range(1, len(questions), 2):
+                if i+1 < len(questions):
+                    q_full = (questions[i] + questions[i+1]).strip()
+                    if q_full.startswith("Q"):
+                        parsed_questions.append(q_full)
+            
+            if len(parsed_questions) < 5:
+                # Fallback splitting
+                parsed_questions = [q.strip() for q in raw_text.split("\n\n") if q.strip().startswith("Q")]
+            
+            st.session_state.quiz_questions = parsed_questions
             st.session_state.quiz_started = True
             st.session_state.current_q = 0
             st.session_state.user_answers = {}
             st.rerun()
 
-    # ===================== INTERACTIVE QUIZ =====================
-    if st.session_state.get("quiz_started", False) and "quiz_out" in st.session_state:
-        questions = [q.strip() for q in st.session_state.quiz_out.split("\n\n") if q.strip().startswith("Q")]
+    # ===================== FIXED INTERACTIVE QUIZ =====================
+    if st.session_state.get("quiz_started", False) and "quiz_questions" in st.session_state:
+        questions = st.session_state.quiz_questions
         
         if st.session_state.current_q < len(questions):
             q_text = questions[st.session_state.current_q]
             st.write(f"**Question {st.session_state.current_q + 1} of {len(questions)}**")
             st.write(q_text)
 
-            options = [line.strip() for line in q_text.split('\n') if line.strip() and line[0].isdigit() and ')' in line]
+            # Extract options
+            options = []
+            for line in q_text.split('\n'):
+                line = line.strip()
+                if line and line[0].isdigit() and ')' in line:
+                    options.append(line)
 
-            selected = st.radio("Choose the correct answer:", options, key=f"q_{st.session_state.current_q}")
-
-            if st.button("Submit Answer & Next ➡️"):
-                st.session_state.user_answers[st.session_state.current_q] = selected
-                st.session_state.current_q += 1
-                st.rerun()
+            if options:
+                selected = st.radio("Choose the correct answer:", options, key=f"q_{st.session_state.current_q}")
+                
+                if st.button("Submit Answer & Next ➡️", type="primary"):
+                    st.session_state.user_answers[st.session_state.current_q] = selected
+                    st.session_state.current_q += 1
+                    st.rerun()
+            else:
+                st.error("No options found for this question.")
+                if st.button("Next Question"):
+                    st.session_state.current_q += 1
+                    st.rerun()
         else:
+            # Quiz Completed
             st.success("🎉 Quiz Completed! You are a superstar!")
             st.write("### Your Results:")
+            
             correct_count = 0
             for i, q in enumerate(questions):
                 user_ans = st.session_state.user_answers.get(i, "Not answered")
+                st.write(f"**Q{i+1}:** {q.splitlines()[0]}")
+                st.write(f"Your answer: {user_ans}")
+                # Simple scoring - you can improve this later
                 if user_ans and user_ans.startswith(("1)", "2)", "3)", "4)")):
                     correct_count += 1
-                    st.success(f"Q{i+1}: ✅")
+                    st.success("✅ Correct!")
                 else:
-                    st.error(f"Q{i+1}: ❌")
+                    st.error("❌ Wrong / Not answered")
 
             st.metric("Your Final Score", f"{correct_count} / {len(questions)} ⭐")
 
             if st.button("Try New Topic"):
-                for key in ["last_text", "last_image", "last_audio", "quiz_out", "quiz_started", "current_q", "user_answers"]:
+                for key in ["last_text", "last_image", "last_audio", "quiz_out", "quiz_started", "current_q", "user_answers", "quiz_questions"]:
                     if key in st.session_state:
                         del st.session_state[key]
                 st.rerun()
@@ -458,7 +491,7 @@ else:
         st.session_state.clear()
         st.rerun()
 
-st.caption("EduMate AI — Updated Image Search | Better Relevance | Persistent Progress")
+st.caption("EduMate AI — Fixed Quiz Flow | Better Image Search | Persistent Progress")
 
 # Cleanup
 if os.path.exists("temp_mic.wav"):
