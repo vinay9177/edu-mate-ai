@@ -1,8 +1,10 @@
 streamlit
 supabase
 google-generativeai
-google-api-python-client
 gTTS
 SpeechRecognition
 Pillow
 python-dotenv
+PyPDF2
+requests
+pexels-api
