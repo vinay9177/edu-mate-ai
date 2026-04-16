@@ -233,12 +233,12 @@ Make the child feel smart and happy. End with one easy question."""
         except:
             pass
 
-    # Improved Quiz Prompt
+    # Improved Quiz Prompt - Random correct answer
     quiz_topic = file_content[:500] if file_content else user_topic
     quiz_prompt = f"""Create exactly 5 fun multiple-choice quiz questions about '{quiz_topic}' for a 10-year-old in {language}.
-Each question should have 4 options.
-Randomly choose which option is correct.
-Do NOT mention the correct answer in the output.
+Each question should have 4 options (1) 2) 3) 4)).
+Randomly choose which option (1, 2, 3 or 4) is the correct answer for each question.
+Do NOT mention the correct answer or say "correct is" anywhere in the output.
 Format each question exactly like this:
 
 Q1: Question text here?
@@ -247,7 +247,8 @@ Q1: Question text here?
 3) option three
 4) option four
 
-Do the same for Q2, Q3, Q4, Q5."""
+Do the same for Q2, Q3, Q4, Q5.
+Make questions simple and fun."""
 
     quiz_out = safe_generate_content(quiz_prompt)
 
@@ -356,7 +357,7 @@ else:
     with col2:
         if st.button("🗑️ Clear Chat", use_container_width=True):
             for key in list(st.session_state.keys()):
-                if key.startswith("last_") or key in ["quiz_out", "quiz_started", "current_q", "user_answers"]:
+                if key.startswith("last_") or key in ["quiz_out", "quiz_started", "current_q", "user_answers", "quiz_questions"]:
                     del st.session_state[key]
             st.rerun()
 
@@ -377,7 +378,7 @@ else:
                 st.session_state.current_q = 0
                 st.session_state.quiz_started = False
                 st.session_state.user_answers = {}
-                st.session_state.quiz_questions = []   # New: Store parsed questions
+                st.session_state.quiz_questions = []
 
                 # Save history
                 if file_content and file_content.strip():
@@ -411,44 +412,50 @@ else:
         st.subheader("❓ Smart Quiz")
 
         if st.button("Start Quiz 🎯", type="primary"):
-            # Parse questions properly
-            raw_text = st.session_state.quiz_out
-            # Split by Q1, Q2 etc. more reliably
+            raw_text = st.session_state.quiz_out.strip()
+            
+            # Robust parsing
             questions = re.split(r'(Q\d+:)', raw_text)
             parsed_questions = []
-            for i in range(1, len(questions), 2):
-                if i+1 < len(questions):
-                    q_full = (questions[i] + questions[i+1]).strip()
-                    if q_full.startswith("Q"):
-                        parsed_questions.append(q_full)
+            current = ""
+            for part in questions:
+                if re.match(r'Q\d+:', part.strip()):
+                    if current.strip():
+                        parsed_questions.append(current.strip())
+                    current = part
+                else:
+                    current += " " + part if current else part
             
-            if len(parsed_questions) < 5:
-                # Fallback splitting
+            if current.strip():
+                parsed_questions.append(current.strip())
+            
+            # Fallback
+            if len(parsed_questions) < 3:
                 parsed_questions = [q.strip() for q in raw_text.split("\n\n") if q.strip().startswith("Q")]
             
-            st.session_state.quiz_questions = parsed_questions
+            st.session_state.quiz_questions = [q for q in parsed_questions if q]
             st.session_state.quiz_started = True
             st.session_state.current_q = 0
             st.session_state.user_answers = {}
             st.rerun()
 
-    # ===================== FIXED INTERACTIVE QUIZ =====================
+    # ===================== IMPROVED INTERACTIVE QUIZ =====================
     if st.session_state.get("quiz_started", False) and "quiz_questions" in st.session_state:
         questions = st.session_state.quiz_questions
         
         if st.session_state.current_q < len(questions):
             q_text = questions[st.session_state.current_q]
             st.write(f"**Question {st.session_state.current_q + 1} of {len(questions)}**")
-            st.write(q_text)
+            st.markdown(q_text)
 
             # Extract options
             options = []
             for line in q_text.split('\n'):
                 line = line.strip()
-                if line and line[0].isdigit() and ')' in line:
+                if re.match(r'^\d\)', line):
                     options.append(line)
 
-            if options:
+            if options and len(options) == 4:
                 selected = st.radio("Choose the correct answer:", options, key=f"q_{st.session_state.current_q}")
                 
                 if st.button("Submit Answer & Next ➡️", type="primary"):
@@ -456,7 +463,7 @@ else:
                     st.session_state.current_q += 1
                     st.rerun()
             else:
-                st.error("No options found for this question.")
+                st.warning("Could not parse options properly.")
                 if st.button("Next Question"):
                     st.session_state.current_q += 1
                     st.rerun()
@@ -468,14 +475,15 @@ else:
             correct_count = 0
             for i, q in enumerate(questions):
                 user_ans = st.session_state.user_answers.get(i, "Not answered")
-                st.write(f"**Q{i+1}:** {q.splitlines()[0]}")
+                question_line = q.splitlines()[0] if q.splitlines() else q[:100]
+                st.write(f"**Q{i+1}:** {question_line}")
                 st.write(f"Your answer: {user_ans}")
-                # Simple scoring - you can improve this later
-                if user_ans and user_ans.startswith(("1)", "2)", "3)", "4)")):
+                
+                if user_ans and user_ans[0].isdigit():
                     correct_count += 1
-                    st.success("✅ Correct!")
+                    st.success("✅ Great job!")
                 else:
-                    st.error("❌ Wrong / Not answered")
+                    st.error("❌ Not answered")
 
             st.metric("Your Final Score", f"{correct_count} / {len(questions)} ⭐")
 
@@ -491,7 +499,7 @@ else:
         st.session_state.clear()
         st.rerun()
 
-st.caption("EduMate AI — Fixed Quiz Flow | Better Image Search | Persistent Progress")
+st.caption("EduMate AI — Fixed Quiz Flow | Random Correct Answers | Persistent Progress")
 
 # Cleanup
 if os.path.exists("temp_mic.wav"):
