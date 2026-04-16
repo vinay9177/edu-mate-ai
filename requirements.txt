@@ -6,5 +6,3 @@ SpeechRecognition
 Pillow
 python-dotenv
 PyPDF2
-requests
-pexels-api

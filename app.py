@@ -23,7 +23,7 @@ GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 PEXELS_KEY = os.getenv("PEXELS_API_KEY")
 
 if not all([SUPABASE_URL, SUPABASE_KEY, GEMINI_KEY]):
-    st.error("❌ Missing required API keys in .env file")
+    st.error("❌ Missing required API keys")
     st.stop()
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -112,7 +112,7 @@ def read_uploaded_file(uploaded_file):
     except Exception as e:
         return f"Error reading file: {str(e)[:100]}"
 
-# ===================== IMPROVED PEXELS IMAGE =====================
+# ===================== PEXELS IMAGE  =====================
 def get_real_kid_image(topic):
     if not PEXELS_KEY:
         return create_simple_fallback(topic), f"Image about {topic}"
@@ -120,7 +120,6 @@ def get_real_kid_image(topic):
     try:
         pexels = API(PEXELS_KEY)
         base_queries = [
-            f"{topic} diagram for kids",
             f"{topic} illustration simple",
             f"{topic} educational diagram",
             f"{topic} cycle explanation",
@@ -128,16 +127,10 @@ def get_real_kid_image(topic):
             f"{topic} learning illustration"
         ]
 
-        bad_keywords = ["paramecium", "cilia", "vacuole", "nucleus", "amoeba", "bacteria", "cell", "microscope"]
-
         for q in base_queries:
             results = pexels.search(query=q, page=1, results_per_page=12)
             if results and results.get('photos'):
                 for photo in results['photos']:
-                    alt_text = photo.get('alt', '').lower()
-                    if any(bad in alt_text for bad in bad_keywords):
-                        continue
-                    
                     try:
                         img_url = photo['src']['large']
                         response = requests.get(img_url, timeout=12)
@@ -233,7 +226,7 @@ Make the child feel smart and happy. End with one easy question."""
         except:
             pass
 
-    # Improved Quiz Prompt - Random correct answer
+    # Improved Quiz Prompt
     quiz_topic = file_content[:500] if file_content else user_topic
     quiz_prompt = f"""Create exactly 5 fun multiple-choice quiz questions about '{quiz_topic}' for a 10-year-old in {language}.
 Each question should have 4 options (1) 2) 3) 4)).
@@ -286,7 +279,7 @@ def reset_password(email):
 # ===================== MAIN APP =====================
 if "user" not in st.session_state:
     st.title("🎒 EduMate AI")
-    st.markdown("**Your Fun Study Buddy** — Explains everything like to a 10-year-old kid!")
+    st.markdown("**Your Fun Study Buddy** — Explains everything like a Buddy!")
 
     tab1, tab2 = st.tabs(["🔑 Login", "📝 Sign Up"])
 
@@ -365,7 +358,7 @@ else:
         if not topic and not mic_audio and not uploaded_file:
             st.warning("Please ask something or upload a file!")
         else:
-            with st.spinner("EduMate is preparing fun explanation..."):
+            with st.spinner("Let me think....."):
                 text_out, image_out, audio_out, quiz_out, image_caption, file_content = generate_edumate_response(
                     topic, lang, friend, mode, voice_toggle, uploaded_file, mic_audio
                 )
@@ -499,7 +492,7 @@ else:
         st.session_state.clear()
         st.rerun()
 
-st.caption("EduMate AI — Fixed Quiz Flow | Random Correct Answers | Persistent Progress")
+st.caption("EduMate AI - Friendly Buddy")
 
 # Cleanup
 if os.path.exists("temp_mic.wav"):
